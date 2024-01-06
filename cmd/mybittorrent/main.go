@@ -50,15 +50,14 @@ func decodeInteger(bencodedNumber string) (int, int, error) {
 	return number, partLength, nil
 }
 
-func decodeList(bencodedString string) (interface{}, int, error) {
-	if bencodedString == "le" {
+func decodeList(bencodedList string) (interface{}, int, error) {
+	if bencodedList == "le" {
 		return []bool{}, 0, nil
 	}
 	var elements []interface{}
-	indexBeforeListEnd, lastElementEndIndex := len(bencodedString)-1, 0
-	bencodedListElements := bencodedString[1:indexBeforeListEnd]
-	for lastElementEndIndex+1 != indexBeforeListEnd {
-		element, elementLength, err := decodeBencode(bencodedListElements[lastElementEndIndex:])
+	lastElementEndIndex := 0
+	for bencodedList[lastElementEndIndex+1] != 'e' {
+		element, elementLength, err := decodeBencode(bencodedList[lastElementEndIndex+1:])
 		if err != nil {
 			return "", 0, err
 		}
