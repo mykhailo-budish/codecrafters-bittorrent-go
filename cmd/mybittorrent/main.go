@@ -67,6 +67,27 @@ func decodeList(bencodedList string) (interface{}, int, error) {
 	return elements, lastElementEndIndex + 2, nil
 }
 
+func decodeDict(bencodedDict string) (interface{}, int, error) {
+	if bencodedDict == "de" {
+		return map[string]bool{}, 0, nil
+	}
+	dict := make(map[string]interface{})
+	lastElementEndIndex := 0
+	for bencodedDict[lastElementEndIndex+1] != 'e' {
+		key, keyLength, err := decodeString(bencodedDict[lastElementEndIndex+1:])
+		if err != nil {
+			return "", 0, err
+		}
+		value, valueLength, err := decodeBencode(bencodedDict[lastElementEndIndex+keyLength+1:])
+		if err != nil {
+			return "", 0, err
+		}
+		dict[key] = value
+		lastElementEndIndex += keyLength + valueLength
+	}
+	return dict, lastElementEndIndex + 2, nil
+}
+
 func decodeBencode(bencodedString string) (interface{}, int, error) {
 	if unicode.IsDigit(rune(bencodedString[0])) {
 		return decodeString(bencodedString)
@@ -78,6 +99,10 @@ func decodeBencode(bencodedString string) (interface{}, int, error) {
 
 	if bencodedString[0] == 'l' {
 		return decodeList(bencodedString)
+	}
+
+	if bencodedString[0] == 'd' {
+		return decodeDict(bencodedString)
 	}
 
 	return "", 0, fmt.Errorf("unsupported type")
