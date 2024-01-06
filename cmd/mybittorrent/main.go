@@ -51,6 +51,9 @@ func decodeInteger(bencodedNumber string) (int, int, error) {
 }
 
 func decodeList(bencodedString string) (interface{}, int, error) {
+	if bencodedString == "le" {
+		return []bool{}, 0, nil
+	}
 	var elements []interface{}
 	indexBeforeListEnd, lastElementEndIndex := len(bencodedString)-1, 0
 	bencodedListElements := bencodedString[1:indexBeforeListEnd]
