@@ -1,14 +1,12 @@
 package main
 
 import (
-	// Uncomment this line to pass the first stage
 	"encoding/json"
 	"fmt"
 	"math"
 	"os"
 	"strconv"
 	"unicode"
-	// bencode "github.com/jackpal/bencode-go" // Available if you need it!
 )
 
 func decodeString(bencodedString string) (string, int, error) {
@@ -57,7 +55,7 @@ func decodeList(bencodedList string) (interface{}, int, error) {
 	var elements []interface{}
 	lastElementEndIndex := 0
 	for bencodedList[lastElementEndIndex+1] != 'e' {
-		element, elementLength, err := decodeBencode(bencodedList[lastElementEndIndex+1:])
+		element, elementLength, err := decodeBencodeData(bencodedList[lastElementEndIndex+1:])
 		if err != nil {
 			return "", 0, err
 		}
@@ -78,7 +76,7 @@ func decodeDict(bencodedDict string) (interface{}, int, error) {
 		if err != nil {
 			return "", 0, err
 		}
-		value, valueLength, err := decodeBencode(bencodedDict[lastElementEndIndex+keyLength+1:])
+		value, valueLength, err := decodeBencodeData(bencodedDict[lastElementEndIndex+keyLength+1:])
 		if err != nil {
 			return "", 0, err
 		}
@@ -88,7 +86,7 @@ func decodeDict(bencodedDict string) (interface{}, int, error) {
 	return dict, lastElementEndIndex + 2, nil
 }
 
-func decodeBencode(bencodedString string) (interface{}, int, error) {
+func decodeBencodeData(bencodedString string) (interface{}, int, error) {
 	if unicode.IsDigit(rune(bencodedString[0])) {
 		return decodeString(bencodedString)
 	}
@@ -108,13 +106,23 @@ func decodeBencode(bencodedString string) (interface{}, int, error) {
 	return "", 0, fmt.Errorf("unsupported type")
 }
 
+type TorrentFile struct {
+	Announce string
+	Info     struct {
+		Length      int
+		Name        string
+		PieceLength int `bencode:"piece length"`
+		Pieces      string
+	}
+}
+
 func main() {
 	command := os.Args[1]
 
 	if command == "decode" {
 		bencodedValue := os.Args[2]
 
-		decoded, _, err := decodeBencode(bencodedValue)
+		decoded, _, err := decodeBencodeData(bencodedValue)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -122,6 +130,31 @@ func main() {
 
 		jsonOutput, _ := json.Marshal(decoded)
 		fmt.Println(string(jsonOutput))
+	} else if command == "info" {
+		fileName := os.Args[2]
+
+		fileBytes, err := os.ReadFile(fileName)
+		if err != nil {
+			panic(err)
+		}
+
+		decoded, _, err := decodeBencodeData(string(fileBytes))
+		if err != nil {
+			panic(err)
+		}
+
+		var torrentFile TorrentFile
+		marshalled, err := json.Marshal(decoded)
+		if err != nil {
+			panic(err)
+		}
+
+		err = json.Unmarshal(marshalled, &torrentFile)
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Printf("Tracker URL: %s\nLength: %d", torrentFile.Announce, torrentFile.Info.Length)
 	} else {
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
