@@ -4,50 +4,81 @@ import (
 	// Uncomment this line to pass the first stage
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"unicode"
 	// bencode "github.com/jackpal/bencode-go" // Available if you need it!
 )
 
-// Example:
-// - 5:hello -> hello
-// - 10:hello12345 -> hello12345
-func decodeBencode(bencodedString string) (interface{}, error) {
-	if unicode.IsDigit(rune(bencodedString[0])) {
-		var firstColonIndex int
+func decodeString(bencodedString string) (string, int, error) {
+	firstColonIndex := 0
 
-		for i := 0; i < len(bencodedString); i++ {
-			if bencodedString[i] == ':' {
-				firstColonIndex = i
-				break
-			}
-		}
+	for bencodedString[firstColonIndex] != ':' {
+		firstColonIndex++
+	}
 
-		lengthStr := bencodedString[:firstColonIndex]
+	lengthStr := bencodedString[:firstColonIndex]
 
-		length, err := strconv.Atoi(lengthStr)
+	length, err := strconv.Atoi(lengthStr)
+	if err != nil {
+		return "", 0, err
+	}
+	partLength := length + firstColonIndex + 1
+
+	return bencodedString[firstColonIndex+1 : firstColonIndex+1+length], partLength, nil
+}
+
+func decodeInteger(bencodedNumber string) (int, int, error) {
+	numberEnd := 1
+	for bencodedNumber[numberEnd] != 'e' {
+		numberEnd++
+	}
+	number, err := strconv.Atoi(bencodedNumber[1:numberEnd])
+	if err != nil {
+		return 0, 0, err
+	}
+
+	var partLength int
+	if number > 0 {
+		partLength = int(math.Ceil(math.Log10(float64(number))) + 2)
+	} else {
+		base := math.Abs(float64(number))
+		partLength = int(math.Ceil(math.Log10(base)) + 3)
+	}
+
+	return number, partLength, nil
+}
+
+func decodeList(bencodedString string) (interface{}, int, error) {
+	var elements []interface{}
+	indexBeforeListEnd, lastElementEndIndex := len(bencodedString)-1, 0
+	bencodedListElements := bencodedString[1:indexBeforeListEnd]
+	for lastElementEndIndex+1 != indexBeforeListEnd {
+		element, elementLength, err := decodeBencode(bencodedListElements[lastElementEndIndex:])
 		if err != nil {
-			return "", err
+			return "", 0, err
 		}
+		elements = append(elements, element)
+		lastElementEndIndex += elementLength
+	}
+	return elements, lastElementEndIndex + 2, nil
+}
 
-		return bencodedString[firstColonIndex+1 : firstColonIndex+1+length], nil
+func decodeBencode(bencodedString string) (interface{}, int, error) {
+	if unicode.IsDigit(rune(bencodedString[0])) {
+		return decodeString(bencodedString)
 	}
 
 	if bencodedString[0] == 'i' {
-		numberEnd := 1
-		for bencodedString[numberEnd] != 'e' {
-			numberEnd++
-		}
-		number, err := strconv.Atoi(bencodedString[1:numberEnd])
-		if err != nil {
-			return "", err
-		}
-
-		return number, nil
+		return decodeInteger(bencodedString)
 	}
 
-	return "", fmt.Errorf("Only strings are supported at the moment")
+	if bencodedString[0] == 'l' {
+		return decodeList(bencodedString)
+	}
+
+	return "", 0, fmt.Errorf("unsupported type")
 }
 
 func main() {
@@ -56,7 +87,7 @@ func main() {
 	if command == "decode" {
 		bencodedValue := os.Args[2]
 
-		decoded, err := decodeBencode(bencodedValue)
+		decoded, _, err := decodeBencode(bencodedValue)
 		if err != nil {
 			fmt.Println(err)
 			return
