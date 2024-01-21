@@ -232,7 +232,7 @@ func main() {
 		piecesLength := len(pieces)
 		for i := 0; i < piecesLength; i += 20 {
 			piece := pieces[i : i+20]
-			fmt.Printf("%x\n", sha1.Sum([]byte(piece)))
+			fmt.Printf("%x\n", piece)
 		}
 	} else {
 		fmt.Println("Unknown command: " + command)
