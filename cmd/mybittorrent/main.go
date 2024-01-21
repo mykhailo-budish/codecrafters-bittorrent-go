@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"os"
 	"sort"
@@ -41,15 +40,7 @@ func _decodeInteger(bencodedNumber string) (int, int, error) {
 		return 0, 0, err
 	}
 
-	var partLength int
-	if number > 0 {
-		partLength = int(math.Ceil(math.Log10(float64(number))) + 2)
-	} else {
-		base := math.Abs(float64(number))
-		partLength = int(math.Ceil(math.Log10(base)) + 3)
-	}
-
-	return number, partLength, nil
+	return number, numberEnd + 1, nil
 }
 
 func _decodeList(bencodedList string) ([]interface{}, int, error) {
