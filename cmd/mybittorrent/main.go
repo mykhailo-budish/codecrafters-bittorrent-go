@@ -342,7 +342,7 @@ func main() {
 		reserved := make([]byte, 8)
 		handshake := append([]byte{pstrlen}, pstr...)
 		handshake = append(handshake, reserved...)
-		handshake = append(handshake, []byte(encodedInfo)...)
+		handshake = append(handshake, []byte(fmt.Sprintf("%s", sha1.Sum([]byte(encodedInfo))))...)
 		handshake = append(handshake, []byte("00112233445566778899")...)
 
 		_, err = conn.Write(handshake)
@@ -350,14 +350,14 @@ func main() {
 			panic(err)
 		}
 
-		res := make([]byte, 177)
-		nbytes, err := conn.Read(res)
-		fmt.Printf("Read %d bytes\n", nbytes)
+		buf := make([]byte, len(handshake))
+		bytesRead, err := conn.Read(buf)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
-		fmt.Println(res)
+		message := string(buf[:bytesRead])
+		fmt.Printf("%x\n", message[len(message)-20:])
 
 	} else {
 		fmt.Println("Unknown command: " + command)
