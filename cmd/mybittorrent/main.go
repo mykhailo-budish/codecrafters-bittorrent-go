@@ -357,7 +357,7 @@ func main() {
 			return
 		}
 		message := string(buf[:bytesRead])
-		fmt.Printf("%x\n", message[len(message)-20:])
+		fmt.Printf("Peer ID: %x\n", message[len(message)-20:])
 
 	} else {
 		fmt.Println("Unknown command: " + command)
