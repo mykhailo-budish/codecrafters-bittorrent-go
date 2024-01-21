@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha1"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -308,11 +309,11 @@ func main() {
 
 		peersLength := len(peers)
 		for i := 0; i < peersLength; i += 6 {
-			firstNum, _ := strconv.ParseInt(fmt.Sprintf("%x", peers[i:i+1]), 16, 64)
-			secondNum, _ := strconv.ParseInt(fmt.Sprintf("%x", peers[i+1:i+2]), 16, 64)
-			thirdNum, _ := strconv.ParseInt(fmt.Sprintf("%x", peers[i+2:i+3]), 16, 64)
-			fourthNum, _ := strconv.ParseInt(fmt.Sprintf("%x", peers[i+3:i+4]), 16, 64)
-			port, _ := strconv.ParseInt(fmt.Sprintf("%x", peers[i+4:i+6]), 16, 64)
+			firstNum := binary.BigEndian.Uint16([]byte(peers[i : i+1]))
+			secondNum := binary.BigEndian.Uint16([]byte(peers[i+1 : i+2]))
+			thirdNum := binary.BigEndian.Uint16([]byte(peers[i+2 : i+3]))
+			fourthNum := binary.BigEndian.Uint16([]byte(peers[i+3 : i+4]))
+			port := binary.BigEndian.Uint16([]byte(peers[i+4 : i+6]))
 
 			fmt.Printf(
 				"%d.%d.%d.%d:%d\n",
