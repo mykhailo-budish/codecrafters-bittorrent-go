@@ -283,7 +283,6 @@ func main() {
 		query.Add("compact", "1")
 
 		req.URL.RawQuery = query.Encode()
-		fmt.Println(req.URL.String())
 
 		response, err := client.Do(req)
 		if err != nil {
@@ -300,10 +299,14 @@ func main() {
 
 		decodedBody, _, err := _decodeDict(string(responseBody))
 		if err != nil {
+			fmt.Println(string(responseBody))
 			panic(err)
 		}
 
-		peers := decodedBody["peers"].(string)
+		peers, ok := decodedBody["peers"].(string)
+		if !ok {
+			fmt.Println(string(responseBody))
+		}
 
 		peersLength := len(peers)
 		for i := 0; i < peersLength; i += 6 {
