@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"sort"
@@ -313,6 +314,50 @@ func main() {
 				int(port[0])*256+int(port[1]),
 			)
 		}
+
+	} else if command == "handshake" {
+		fileName := os.Args[2]
+		address := os.Args[3]
+
+		// address := "178.62.85.20:51489"
+
+		fileBytes, err := os.ReadFile(fileName)
+		if err != nil {
+			panic(err)
+		}
+
+		decoded, _, err := _decodeDict(string(fileBytes))
+		if err != nil {
+			panic(err)
+		}
+		info := decoded["info"].(map[string]interface{})
+		encodedInfo := _encodeDict(info)
+
+		conn, err := net.Dial("tcp", address)
+		if err != nil {
+			panic(err)
+		}
+		pstrlen := byte(19)
+		pstr := []byte("BitTorrent protocol")
+		reserved := make([]byte, 8)
+		handshake := append([]byte{pstrlen}, pstr...)
+		handshake = append(handshake, reserved...)
+		handshake = append(handshake, []byte(encodedInfo)...)
+		handshake = append(handshake, []byte("00112233445566778899")...)
+
+		_, err = conn.Write(handshake)
+		if err != nil {
+			panic(err)
+		}
+
+		res := make([]byte, 177)
+		nbytes, err := conn.Read(res)
+		fmt.Printf("Read %d bytes\n", nbytes)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Println(res)
 
 	} else {
 		fmt.Println("Unknown command: " + command)
