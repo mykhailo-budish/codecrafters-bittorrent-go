@@ -217,6 +217,23 @@ func main() {
 			panic(err)
 		}
 		fmt.Printf("Info Hash: %x\n", sha1.Sum([]byte(encodedInfo)))
+
+		pieceLength, ok := info["piece length"].(int)
+		if !ok {
+			panic("Invalid torrent file")
+		}
+		fmt.Printf("Piece Length: %d\n", pieceLength)
+
+		pieces, ok := info["pieces"].(string)
+		if !ok {
+			panic("Invalid torrent file")
+		}
+		fmt.Println("Piece Hashes:")
+		piecesLength := len(pieces)
+		for i := 0; i < piecesLength; i += 20 {
+			piece := pieces[i : i+20]
+			fmt.Printf("%x\n", sha1.Sum([]byte(piece)))
+		}
 	} else {
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
