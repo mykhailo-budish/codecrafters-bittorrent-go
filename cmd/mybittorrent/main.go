@@ -216,7 +216,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Printf("Info hash: %x\n", sha1.Sum([]byte(encodedInfo)))
+		fmt.Printf("Info Hash: %x\n", sha1.Sum([]byte(encodedInfo)))
 	} else {
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
