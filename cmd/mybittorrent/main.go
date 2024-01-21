@@ -2,13 +2,11 @@ package main
 
 import (
 	"crypto/sha1"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
-	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -263,66 +261,62 @@ func main() {
 
 		encodedInfo := _encodeDict(info)
 
-		query, err := url.ParseQuery("")
-		if err != nil {
-			panic(err)
+		trackerUrl, ok := decoded["announce"].(string)
+		if !ok {
+			panic("Invalid torrent file")
 		}
 
+		client := &http.Client{}
+		req, err := http.NewRequest(http.MethodGet, trackerUrl, nil)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		query := req.URL.Query()
 		query.Add("info_hash", fmt.Sprintf("%s", sha1.Sum([]byte(encodedInfo))))
-		query.Add("peer_id", "00112233445566778899")
+		query.Add("peer_id", "05022003050220034586")
 		query.Add("port", "6881")
 		query.Add("uploaded", "0")
 		query.Add("downloaded", "0")
 		query.Add("left", fmt.Sprint(fileLength))
 		query.Add("compact", "1")
 
-		trackerUrl, ok := decoded["announce"].(string)
-		if !ok {
-			panic("Invalid torrent file")
+		req.URL.RawQuery = query.Encode()
+		fmt.Println(req.URL.String())
+
+		response, err := client.Do(req)
+		if err != nil {
+			fmt.Println(err)
+			return
 		}
 
-		torrentUrl, err := url.Parse(fmt.Sprintf("%s?%s", trackerUrl, query.Encode()))
+		defer response.Body.Close()
+		responseBody, err := io.ReadAll(response.Body)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		decodedBody, _, err := _decodeDict(string(responseBody))
 		if err != nil {
 			panic(err)
 		}
 
-		response, err := http.Get(torrentUrl.String())
-		if err != nil {
-			panic(err)
-		}
-
-		body, err := io.ReadAll(response.Body)
-		response.Body.Close()
-		if err != nil {
-			panic(err)
-		}
-
-		decodedBody, _, err := _decodeDict(string(body))
-		if err != nil {
-			panic(err)
-		}
-
-		fmt.Println(body)
-		peers, ok := decodedBody["peers"].(string)
-		if !ok {
-			panic("Invalid peers")
-		}
+		peers := decodedBody["peers"].(string)
 
 		peersLength := len(peers)
 		for i := 0; i < peersLength; i += 6 {
-			firstNum := binary.BigEndian.Uint16([]byte(peers[i : i+1]))
-			secondNum := binary.BigEndian.Uint16([]byte(peers[i+1 : i+2]))
-			thirdNum := binary.BigEndian.Uint16([]byte(peers[i+2 : i+3]))
-			fourthNum := binary.BigEndian.Uint16([]byte(peers[i+3 : i+4]))
-			port := binary.BigEndian.Uint16([]byte(peers[i+4 : i+6]))
+			ip := peers[i : i+4]
+			port := peers[i+4 : i+6]
 
 			fmt.Printf(
 				"%d.%d.%d.%d:%d\n",
-				firstNum,
-				secondNum,
-				thirdNum,
-				fourthNum,
-				port,
+				ip[0],
+				ip[1],
+				ip[2],
+				ip[3],
+				int(port[0])*256+int(port[1]),
 			)
 		}
 
