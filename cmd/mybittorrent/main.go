@@ -302,6 +302,7 @@ func main() {
 			panic(err)
 		}
 
+		fmt.Println(body)
 		peers, ok := decodedBody["peers"].(string)
 		if !ok {
 			panic("Invalid peers")
