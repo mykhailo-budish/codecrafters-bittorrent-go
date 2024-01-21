@@ -4,7 +4,10 @@ import (
 	"crypto/sha1"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
+	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -234,6 +237,93 @@ func main() {
 			piece := pieces[i : i+20]
 			fmt.Printf("%x\n", piece)
 		}
+	} else if command == "peers" {
+		fileName := os.Args[2]
+
+		fileBytes, err := os.ReadFile(fileName)
+		if err != nil {
+			panic(err)
+		}
+
+		decoded, _, err := _decodeDict(string(fileBytes))
+		if err != nil {
+			panic(err)
+		}
+
+		info, ok := decoded["info"].(map[string]interface{})
+		if !ok {
+			panic("Invalid torrent file")
+		}
+
+		fileLength, ok := info["length"].(int)
+		if !ok {
+			panic("Invalid torrent file")
+		}
+
+		encodedInfo := _encodeDict(info)
+
+		query, err := url.ParseQuery("")
+		if err != nil {
+			panic(err)
+		}
+
+		query.Add("info_hash", fmt.Sprintf("%s", sha1.Sum([]byte(encodedInfo))))
+		query.Add("peer_id", "00112233445566778899")
+		query.Add("port", "6881")
+		query.Add("uploaded", "0")
+		query.Add("downloaded", "0")
+		query.Add("left", fmt.Sprint(fileLength))
+		query.Add("compact", "1")
+
+		trackerUrl, ok := decoded["announce"].(string)
+		if !ok {
+			panic("Invalid torrent file")
+		}
+
+		torrentUrl, err := url.Parse(fmt.Sprintf("%s?%s", trackerUrl, query.Encode()))
+		if err != nil {
+			panic(err)
+		}
+
+		response, err := http.Get(torrentUrl.String())
+		if err != nil {
+			panic(err)
+		}
+
+		body, err := io.ReadAll(response.Body)
+		response.Body.Close()
+		if err != nil {
+			panic(err)
+		}
+
+		decodedBody, _, err := _decodeDict(string(body))
+		if err != nil {
+			panic(err)
+		}
+
+		peers, ok := decodedBody["peers"].(string)
+		if !ok {
+			panic("Invalid peers")
+		}
+
+		peersLength := len(peers)
+		for i := 0; i < peersLength; i += 6 {
+			firstNum, _ := strconv.ParseInt(fmt.Sprintf("%x", peers[i:i+1]), 16, 64)
+			secondNum, _ := strconv.ParseInt(fmt.Sprintf("%x", peers[i+1:i+2]), 16, 64)
+			thirdNum, _ := strconv.ParseInt(fmt.Sprintf("%x", peers[i+2:i+3]), 16, 64)
+			fourthNum, _ := strconv.ParseInt(fmt.Sprintf("%x", peers[i+3:i+4]), 16, 64)
+			port, _ := strconv.ParseInt(fmt.Sprintf("%x", peers[i+4:i+6]), 16, 64)
+
+			fmt.Printf(
+				"%d.%d.%d.%d:%d\n",
+				firstNum,
+				secondNum,
+				thirdNum,
+				fourthNum,
+				port,
+			)
+		}
+
 	} else {
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
