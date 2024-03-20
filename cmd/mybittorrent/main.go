@@ -529,6 +529,7 @@ func main() {
 
 			fmt.Printf("%v\n", piecePayload)
 			conn.Write(piecePayload)
+			fmt.Printf("Begin: %d, length: %d, piece length: %d\n", i, pieceBlockLength, pieceLength)
 
 			var messageLength uint32
 			var messageId uint8
