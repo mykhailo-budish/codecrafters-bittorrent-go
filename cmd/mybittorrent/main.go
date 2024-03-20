@@ -168,6 +168,211 @@ func encodeData(itemToEncode interface{}) (string, error) {
 	}
 }
 
+func getDecodedFile(torrentFileName string) map[string]interface{} {
+	fileBytes, err := os.ReadFile(torrentFileName)
+	if err != nil {
+		panic(err)
+	}
+
+	decodedTorrentFile, _, err := _decodeDict(string(fileBytes))
+	if err != nil {
+		panic(err)
+	}
+	return decodedTorrentFile
+}
+
+func downloadPiece(decodedTorrentFile map[string]interface{}, pieceIndex int) (piece []byte, pieceLength int) {
+	torrentFileInfo, ok := decodedTorrentFile["info"].(map[string]interface{})
+	if !ok {
+		panic("Invalid torrent file")
+	}
+
+	fileLength, ok := torrentFileInfo["length"].(int)
+	if !ok {
+		panic("Invalid torrent file")
+	}
+
+	encodedInfo := _encodeDict(torrentFileInfo)
+
+	trackerUrl, ok := decodedTorrentFile["announce"].(string)
+	if !ok {
+		panic("Invalid torrent file")
+	}
+
+	client := &http.Client{}
+	req, err := http.NewRequest(http.MethodGet, trackerUrl, nil)
+	if err != nil {
+		fmt.Println(err)
+		return nil, 0
+	}
+
+	query := req.URL.Query()
+	query.Add("info_hash", fmt.Sprintf("%s", sha1.Sum([]byte(encodedInfo))))
+	query.Add("peer_id", "05022003050220034586")
+	query.Add("port", "6881")
+	query.Add("uploaded", "0")
+	query.Add("downloaded", "0")
+	query.Add("left", fmt.Sprint(fileLength))
+	query.Add("compact", "1")
+
+	req.URL.RawQuery = query.Encode()
+
+	response, err := client.Do(req)
+	if err != nil {
+		fmt.Println(err)
+		return nil, 0
+	}
+
+	defer response.Body.Close()
+	responseBody, err := io.ReadAll(response.Body)
+	if err != nil {
+		fmt.Println(err)
+		return nil, 0
+	}
+
+	decodedBody, _, err := _decodeDict(string(responseBody))
+	if err != nil {
+		fmt.Println(string(responseBody))
+		panic(err)
+	}
+
+	peers, ok := decodedBody["peers"].(string)
+	if !ok {
+		fmt.Println(string(responseBody))
+	}
+
+	address := fmt.Sprintf("%d.%d.%d.%d:%d", peers[0], peers[1], peers[2], peers[3], int(peers[4])*256+int(peers[5]))
+
+	fmt.Printf("%s\n", address)
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		panic(err)
+	}
+	defer conn.Close()
+	pstrlen := byte(19)
+	pstr := []byte("BitTorrent protocol")
+	reserved := make([]byte, 8)
+	handshake := append([]byte{pstrlen}, pstr...)
+	handshake = append(handshake, reserved...)
+	handshake = append(handshake, []byte(fmt.Sprintf("%s", sha1.Sum([]byte(encodedInfo))))...)
+	handshake = append(handshake, []byte("00112233445566778899")...)
+
+	_, err = conn.Write(handshake)
+	if err != nil {
+		panic(err)
+	}
+
+	buf := make([]byte, len(handshake))
+	bytesRead, err := conn.Read(buf)
+	if err != nil {
+		fmt.Println(err)
+		return nil, 0
+	}
+	message := string(buf[:bytesRead])
+	fmt.Printf("Peer ID: %x\n", message[len(message)-20:])
+
+	buf = make([]byte, 1<<15)
+	_, err = conn.Read(buf)
+	if err != nil {
+		panic(err)
+	}
+	messageCode := buf[4]
+	if messageCode != 5 {
+		panic("Received unexpected message, expected bitfield")
+	}
+	fmt.Println("Got bitfield")
+	payloadBuffer := new(bytes.Buffer)
+	binary.Write(payloadBuffer, binary.BigEndian, uint32(1))
+	payloadBytes := payloadBuffer.Bytes()
+	payloadBytes = append(payloadBytes, 2)
+	conn.Write(payloadBytes)
+	_, err = conn.Read(buf)
+	if err != nil {
+		panic(err)
+	}
+	messageCode = buf[4]
+	if messageCode != 1 {
+		panic("Received unexpected message, expected unchoke")
+	}
+	fmt.Println("got unchoke")
+	piecesAmount := len(torrentFileInfo["pieces"].(string)) / 20
+	pieceLength = torrentFileInfo["piece length"].(int)
+	if pieceIndex == piecesAmount-1 {
+		pieceLength = fileLength - pieceLength*(piecesAmount-1)
+	}
+	pieceBlocksAmount := pieceLength / PIECE_BLOCK_MAX_SIZE
+	if pieceLength%PIECE_BLOCK_MAX_SIZE > 0 {
+		pieceBlocksAmount++
+	}
+	piece = make([]byte, pieceLength)
+	for i := 0; i < pieceLength; i += PIECE_BLOCK_MAX_SIZE {
+		pieceBlockLength := PIECE_BLOCK_MAX_SIZE
+		if i+PIECE_BLOCK_MAX_SIZE > pieceLength {
+			pieceBlockLength = pieceLength - i
+		}
+
+		piecePayloadBuffer := new(bytes.Buffer)
+		binary.Write(piecePayloadBuffer, binary.BigEndian, uint32(13))
+		piecePayload := piecePayloadBuffer.Bytes()
+
+		piecePayload = append(piecePayload, 6)
+
+		piecePayloadBuffer = new(bytes.Buffer)
+		binary.Write(piecePayloadBuffer, binary.BigEndian, uint32(pieceIndex))
+		piecePayload = append(piecePayload, piecePayloadBuffer.Bytes()...)
+
+		piecePayloadBuffer = new(bytes.Buffer)
+		binary.Write(piecePayloadBuffer, binary.BigEndian, uint32(i))
+		piecePayload = append(piecePayload, piecePayloadBuffer.Bytes()...)
+
+		piecePayloadBuffer = new(bytes.Buffer)
+		binary.Write(piecePayloadBuffer, binary.BigEndian, uint32(pieceBlockLength))
+		piecePayload = append(piecePayload, piecePayloadBuffer.Bytes()...)
+
+		fmt.Printf("%v\n", piecePayload)
+		_, err = conn.Write(piecePayload)
+		if err != nil {
+			fmt.Printf("Error sending message: %s", err.Error())
+			return nil, 0
+		}
+		fmt.Printf("Begin: %d, length: %d, piece length: %d, blocks amount: %d\n", i, pieceBlockLength, pieceLength, pieceBlocksAmount)
+
+		var messageLength uint32
+		var messageId uint8
+		err = binary.Read(conn, binary.BigEndian, &messageLength)
+		if err != nil {
+			if err.Error() == "EOF" {
+				// i -= PIECE_BLOCK_MAX_SIZE
+				break
+			}
+		}
+		err = binary.Read(conn, binary.BigEndian, &messageId)
+		if err != nil {
+			fmt.Printf("Cannot read message ID, %s", err.Error())
+			return nil, 0
+		}
+		fmt.Println(messageId)
+
+		if messageLength > 0 {
+			buf = make([]byte, messageLength-1)
+			_, err = io.ReadAtLeast(conn, buf, len(buf))
+			if err != nil {
+				fmt.Printf("Cannot read payload, %s", err.Error())
+				return nil, 0
+			}
+			blockBegin := binary.BigEndian.Uint32(buf[4:8])
+			block := buf[8:]
+			copy(piece[blockBegin:], block)
+		}
+	}
+	pieceSumFromPeer := sha1.Sum(piece)
+	pieceHashFromFile := []byte(torrentFileInfo["pieces"].(string)[pieceIndex*20 : (pieceIndex+1)*20])
+	if !bytes.Equal(pieceSumFromPeer[:], pieceHashFromFile) {
+		panic("Invalid piece checksum")
+	}
+	return piece, pieceLength
+}
+
 func main() {
 	command := os.Args[1]
 
@@ -374,201 +579,27 @@ func main() {
 			panic(err)
 		}
 
-		fileBytes, err := os.ReadFile(torrentFileName)
-		if err != nil {
-			panic(err)
-		}
-
-		decodedTorrentFile, _, err := _decodeDict(string(fileBytes))
-		if err != nil {
-			panic(err)
-		}
-
-		torrentFileInfo, ok := decodedTorrentFile["info"].(map[string]interface{})
-		if !ok {
-			panic("Invalid torrent file")
-		}
-
-		fileLength, ok := torrentFileInfo["length"].(int)
-		if !ok {
-			panic("Invalid torrent file")
-		}
-
-		encodedInfo := _encodeDict(torrentFileInfo)
-
-		trackerUrl, ok := decodedTorrentFile["announce"].(string)
-		if !ok {
-			panic("Invalid torrent file")
-		}
-
-		client := &http.Client{}
-		req, err := http.NewRequest(http.MethodGet, trackerUrl, nil)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-
-		query := req.URL.Query()
-		query.Add("info_hash", fmt.Sprintf("%s", sha1.Sum([]byte(encodedInfo))))
-		query.Add("peer_id", "05022003050220034586")
-		query.Add("port", "6881")
-		query.Add("uploaded", "0")
-		query.Add("downloaded", "0")
-		query.Add("left", fmt.Sprint(fileLength))
-		query.Add("compact", "1")
-
-		req.URL.RawQuery = query.Encode()
-
-		response, err := client.Do(req)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-
-		defer response.Body.Close()
-		responseBody, err := io.ReadAll(response.Body)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-
-		decodedBody, _, err := _decodeDict(string(responseBody))
-		if err != nil {
-			fmt.Println(string(responseBody))
-			panic(err)
-		}
-
-		peers, ok := decodedBody["peers"].(string)
-		if !ok {
-			fmt.Println(string(responseBody))
-		}
-
-		address := fmt.Sprintf("%d.%d.%d.%d:%d", peers[0], peers[1], peers[2], peers[3], int(peers[4])*256+int(peers[5]))
-
-		fmt.Printf("%s\n", address)
-		conn, err := net.Dial("tcp", address)
-		if err != nil {
-			panic(err)
-		}
-		pstrlen := byte(19)
-		pstr := []byte("BitTorrent protocol")
-		reserved := make([]byte, 8)
-		handshake := append([]byte{pstrlen}, pstr...)
-		handshake = append(handshake, reserved...)
-		handshake = append(handshake, []byte(fmt.Sprintf("%s", sha1.Sum([]byte(encodedInfo))))...)
-		handshake = append(handshake, []byte("00112233445566778899")...)
-
-		_, err = conn.Write(handshake)
-		if err != nil {
-			panic(err)
-		}
-
-		buf := make([]byte, len(handshake))
-		bytesRead, err := conn.Read(buf)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		message := string(buf[:bytesRead])
-		fmt.Printf("Peer ID: %x\n", message[len(message)-20:])
-
-		buf = make([]byte, 1<<15)
-		_, err = conn.Read(buf)
-		if err != nil {
-			panic(err)
-		}
-		messageCode := buf[4]
-		if messageCode != 5 {
-			panic("Received unexpected message, expected bitfield")
-		}
-		fmt.Println("Got bitfield")
-		payloadBuffer := new(bytes.Buffer)
-		binary.Write(payloadBuffer, binary.BigEndian, uint32(1))
-		payloadBytes := payloadBuffer.Bytes()
-		payloadBytes = append(payloadBytes, 2)
-		conn.Write(payloadBytes)
-		_, err = conn.Read(buf)
-		if err != nil {
-			panic(err)
-		}
-		messageCode = buf[4]
-		if messageCode != 1 {
-			panic("Received unexpected message, expected unchoke")
-		}
-		fmt.Println("got unchoke")
-		piecesAmount := len(torrentFileInfo["pieces"].(string)) / 20
-		pieceLength := torrentFileInfo["piece length"].(int)
-		if pieceIndex == piecesAmount-1 {
-			pieceLength = fileLength - pieceLength*(piecesAmount-1)
-		}
-		pieceBlocksAmount := pieceLength / PIECE_BLOCK_MAX_SIZE
-		if pieceLength%PIECE_BLOCK_MAX_SIZE > 0 {
-			pieceBlocksAmount++
-		}
-		piece := make([]byte, pieceLength)
-		for i := 0; i < pieceLength; i += PIECE_BLOCK_MAX_SIZE {
-			pieceBlockLength := PIECE_BLOCK_MAX_SIZE
-			if i+PIECE_BLOCK_MAX_SIZE > pieceLength {
-				pieceBlockLength = pieceLength - i
-			}
-
-			piecePayloadBuffer := new(bytes.Buffer)
-			binary.Write(piecePayloadBuffer, binary.BigEndian, uint32(13))
-			piecePayload := piecePayloadBuffer.Bytes()
-
-			piecePayload = append(piecePayload, 6)
-
-			piecePayloadBuffer = new(bytes.Buffer)
-			binary.Write(piecePayloadBuffer, binary.BigEndian, uint32(pieceIndex))
-			piecePayload = append(piecePayload, piecePayloadBuffer.Bytes()...)
-
-			piecePayloadBuffer = new(bytes.Buffer)
-			binary.Write(piecePayloadBuffer, binary.BigEndian, uint32(i))
-			piecePayload = append(piecePayload, piecePayloadBuffer.Bytes()...)
-
-			piecePayloadBuffer = new(bytes.Buffer)
-			binary.Write(piecePayloadBuffer, binary.BigEndian, uint32(pieceBlockLength))
-			piecePayload = append(piecePayload, piecePayloadBuffer.Bytes()...)
-
-			fmt.Printf("%v\n", piecePayload)
-			_, err = conn.Write(piecePayload)
-			if err != nil {
-				fmt.Printf("Error sending message: %s", err.Error())
-				return
-			}
-			fmt.Printf("Begin: %d, length: %d, piece length: %d, blocks amount: %d\n", i, pieceBlockLength, pieceLength, pieceBlocksAmount)
-
-			var messageLength uint32
-			var messageId uint8
-			err = binary.Read(conn, binary.BigEndian, &messageLength)
-			if err != nil {
-				if err.Error() == "EOF" {
-					// i -= PIECE_BLOCK_MAX_SIZE
-					break
-				}
-			}
-			err = binary.Read(conn, binary.BigEndian, &messageId)
-			if err != nil {
-				fmt.Printf("Cannot read message ID, %s", err.Error())
-				return
-			}
-			fmt.Println(messageId)
-
-			if messageLength > 0 {
-				buf = make([]byte, messageLength-1)
-				_, err = io.ReadAtLeast(conn, buf, len(buf))
-				if err != nil {
-					fmt.Printf("Cannot read payload, %s", err.Error())
-					return
-				}
-				blockBegin := binary.BigEndian.Uint32(buf[4:8])
-				block := buf[8:]
-				copy(piece[blockBegin:], block)
-			}
-
-		}
+		piece, _ := downloadPiece(getDecodedFile(torrentFileName), pieceIndex)
 		os.WriteFile(outputFilePath, piece, os.ModePerm)
 		fmt.Printf("Piece %d downloaded to %s.", pieceIndex, outputFilePath)
+	} else if command == "download" {
+		outputFilePath := os.Args[3]
+		torrentFileName := os.Args[4]
+		decodedTorrentFile := getDecodedFile(torrentFileName)
+
+		torrentFileInfo := decodedTorrentFile["info"].(map[string]interface{})
+		fileLength := torrentFileInfo["length"].(int)
+
+		piecesAmount := len(torrentFileInfo["pieces"].(string)) / 20
+		wholePieceLength := torrentFileInfo["piece length"].(int)
+
+		fileBytes := make([]byte, fileLength)
+		for i := 0; i < piecesAmount; i++ {
+			piece, pieceLength := downloadPiece(decodedTorrentFile, i)
+			copy(fileBytes[i*wholePieceLength:i*wholePieceLength+pieceLength], piece)
+		}
+		os.WriteFile(outputFilePath, fileBytes, os.ModePerm)
+		fmt.Printf("Downloaded %s to %s.", torrentFileName, outputFilePath)
 	} else {
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
