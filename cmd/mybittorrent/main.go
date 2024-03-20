@@ -161,10 +161,10 @@ func (torrentFile TorrentFile) getPeers() []string {
 		peerBytes := peersBytes[i*6 : (i+1)*6]
 		peers[i] = fmt.Sprintf(
 			"%d.%d.%d.%d:%d",
-			peerBytes[i],
-			peerBytes[i+1],
-			peerBytes[i+2],
-			peerBytes[i+3],
+			peerBytes[0],
+			peerBytes[1],
+			peerBytes[2],
+			peerBytes[3],
 			binary.BigEndian.Uint16([]byte(peerBytes[4:6])),
 		)
 	}
