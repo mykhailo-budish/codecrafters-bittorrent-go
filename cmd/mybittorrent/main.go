@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha1"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +14,8 @@ import (
 	"strconv"
 	"unicode"
 )
+
+var PIECE_BLOCK_MAX_SIZE = 1 << 14
 
 func _decodeString(bencodedString string) (string, int, error) {
 	firstColonIndex := 0
@@ -359,6 +363,181 @@ func main() {
 		message := string(buf[:bytesRead])
 		fmt.Printf("Peer ID: %x\n", message[len(message)-20:])
 
+	} else if command == "download_piece" {
+		if os.Args[2] != "-o" {
+			panic("Output file is not provided")
+		}
+		outputFilePath := os.Args[3]
+		torrentFileName := os.Args[4]
+		pieceIndex, err := strconv.Atoi(os.Args[5])
+		if err != nil {
+			panic(err)
+		}
+
+		fileBytes, err := os.ReadFile(torrentFileName)
+		if err != nil {
+			panic(err)
+		}
+
+		decodedTorrentFile, _, err := _decodeDict(string(fileBytes))
+		if err != nil {
+			panic(err)
+		}
+
+		torrentFileInfo, ok := decodedTorrentFile["info"].(map[string]interface{})
+		if !ok {
+			panic("Invalid torrent file")
+		}
+
+		fileLength, ok := torrentFileInfo["length"].(int)
+		if !ok {
+			panic("Invalid torrent file")
+		}
+
+		encodedInfo := _encodeDict(torrentFileInfo)
+
+		trackerUrl, ok := decodedTorrentFile["announce"].(string)
+		if !ok {
+			panic("Invalid torrent file")
+		}
+
+		client := &http.Client{}
+		req, err := http.NewRequest(http.MethodGet, trackerUrl, nil)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		query := req.URL.Query()
+		query.Add("info_hash", fmt.Sprintf("%s", sha1.Sum([]byte(encodedInfo))))
+		query.Add("peer_id", "05022003050220034586")
+		query.Add("port", "6881")
+		query.Add("uploaded", "0")
+		query.Add("downloaded", "0")
+		query.Add("left", fmt.Sprint(fileLength))
+		query.Add("compact", "1")
+
+		req.URL.RawQuery = query.Encode()
+
+		response, err := client.Do(req)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		defer response.Body.Close()
+		responseBody, err := io.ReadAll(response.Body)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		decodedBody, _, err := _decodeDict(string(responseBody))
+		if err != nil {
+			fmt.Println(string(responseBody))
+			panic(err)
+		}
+
+		peers, ok := decodedBody["peers"].(string)
+		if !ok {
+			fmt.Println(string(responseBody))
+		}
+
+		address := fmt.Sprintf("%d.%d.%d.%d:%d", peers[0], peers[1], peers[2], peers[3], int(peers[4])*256+int(peers[5]))
+
+		fmt.Printf("%s\n", address)
+		conn, err := net.Dial("tcp", address)
+		if err != nil {
+			panic(err)
+		}
+		pstrlen := byte(19)
+		pstr := []byte("BitTorrent protocol")
+		reserved := make([]byte, 8)
+		handshake := append([]byte{pstrlen}, pstr...)
+		handshake = append(handshake, reserved...)
+		handshake = append(handshake, []byte(fmt.Sprintf("%s", sha1.Sum([]byte(encodedInfo))))...)
+		handshake = append(handshake, []byte("00112233445566778899")...)
+
+		_, err = conn.Write(handshake)
+		if err != nil {
+			panic(err)
+		}
+
+		buf := make([]byte, len(handshake))
+		bytesRead, err := conn.Read(buf)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		message := string(buf[:bytesRead])
+		fmt.Printf("Peer ID: %x\n", message[len(message)-20:])
+
+		buf = make([]byte, 1<<15)
+		_, err = conn.Read(buf)
+		if err != nil {
+			panic(err)
+		}
+		messageCode := buf[4]
+		if messageCode != 5 {
+			panic("Received unexpected message, expected bitfield")
+		}
+		fmt.Println("Got bitfield")
+		payloadBuffer := new(bytes.Buffer)
+		binary.Write(payloadBuffer, binary.BigEndian, uint32(1))
+		payloadBytes := payloadBuffer.Bytes()
+		payloadBytes = append(payloadBytes, 2)
+		conn.Write(payloadBytes)
+		_, err = conn.Read(buf)
+		if err != nil {
+			panic(err)
+		}
+		messageCode = buf[4]
+		if messageCode != 1 {
+			panic("Received unexpected message, expected unchoke")
+		}
+		fmt.Println("got unchoke")
+		pieceLength := torrentFileInfo["piece length"].(int)
+		// pieces := torrentFileInfo["pieces"].(string)
+		pieceBlocksAmount := pieceLength / PIECE_BLOCK_MAX_SIZE
+		if pieceLength%PIECE_BLOCK_MAX_SIZE > 0 {
+			pieceBlocksAmount++
+		}
+		piece := make([]byte, pieceLength)
+		for i := 0; i < pieceBlocksAmount; i++ {
+			pieceBlockBegin := i * PIECE_BLOCK_MAX_SIZE
+			pieceBlockLength := PIECE_BLOCK_MAX_SIZE
+			if i == pieceBlocksAmount-1 {
+				pieceBlockLength = pieceLength - pieceBlockBegin
+			}
+
+			piecePayloadBuffer := new(bytes.Buffer)
+			binary.Write(piecePayloadBuffer, binary.BigEndian, uint32(13))
+			piecePayload := piecePayloadBuffer.Bytes()
+
+			piecePayload = append(piecePayload, 6)
+
+			piecePayloadBuffer = new(bytes.Buffer)
+			binary.Write(piecePayloadBuffer, binary.BigEndian, uint32(pieceIndex))
+			piecePayload = append(piecePayload, piecePayloadBuffer.Bytes()...)
+
+			piecePayloadBuffer = new(bytes.Buffer)
+			binary.Write(piecePayloadBuffer, binary.BigEndian, uint32(pieceBlockBegin))
+			piecePayload = append(piecePayload, piecePayloadBuffer.Bytes()...)
+
+			piecePayloadBuffer = new(bytes.Buffer)
+			binary.Write(piecePayloadBuffer, binary.BigEndian, uint32(pieceBlockLength))
+			piecePayload = append(piecePayload, piecePayloadBuffer.Bytes()...)
+
+			fmt.Printf("%v\n", piecePayload)
+			conn.Write(piecePayload)
+			bytesRead, err = conn.Read(buf)
+			if err != nil {
+				panic(err)
+			}
+			copy(piece[pieceBlockBegin:pieceBlockBegin+pieceBlockLength], buf[13:bytesRead])
+		}
+		os.WriteFile(outputFilePath, piece, os.ModeAppend)
+		fmt.Printf("Piece %d downloaded to %s.", pieceIndex, outputFilePath)
 	} else {
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
