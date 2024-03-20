@@ -222,9 +222,10 @@ func (torrentFile TorrentFile) downloadPiece(pieceIndex int) (piece []byte, piec
 	fmt.Println("received unchoke")
 
 	piecesAmount := len(torrentFile.info.pieces)
+
 	pieceLength = torrentFile.info.pieceLength
 	if pieceIndex == piecesAmount-1 {
-		pieceLength = torrentFile.info.length - pieceLength*(pieceLength-1)
+		pieceLength = torrentFile.info.length - pieceLength*(piecesAmount-1)
 	}
 
 	piece = make([]byte, pieceLength)
