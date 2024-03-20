@@ -512,7 +512,7 @@ func main() {
 			copy(fileBytes[i*wholePieceLength:i*wholePieceLength+pieceLength], piece)
 		}
 		os.WriteFile(outputFilePath, fileBytes, os.ModePerm)
-		fmt.Printf("Downloaded %s to %s.", torrentFileName, outputFilePath)
+		fmt.Printf("Downloaded %s to %s.\n", torrentFileName, outputFilePath)
 	} else {
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
