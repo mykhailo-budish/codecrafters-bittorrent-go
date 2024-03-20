@@ -503,11 +503,10 @@ func main() {
 			pieceBlocksAmount++
 		}
 		piece := make([]byte, pieceLength)
-		for i := 0; i < pieceBlocksAmount; i++ {
-			pieceBlockBegin := i * PIECE_BLOCK_MAX_SIZE
+		for i := 0; i < pieceLength; i += PIECE_BLOCK_MAX_SIZE {
 			pieceBlockLength := PIECE_BLOCK_MAX_SIZE
-			if i == pieceBlocksAmount-1 {
-				pieceBlockLength = pieceLength - pieceBlockBegin
+			if i+PIECE_BLOCK_MAX_SIZE > pieceLength {
+				pieceBlockLength = pieceLength - i
 			}
 
 			piecePayloadBuffer := new(bytes.Buffer)
@@ -521,7 +520,7 @@ func main() {
 			piecePayload = append(piecePayload, piecePayloadBuffer.Bytes()...)
 
 			piecePayloadBuffer = new(bytes.Buffer)
-			binary.Write(piecePayloadBuffer, binary.BigEndian, uint32(pieceBlockBegin))
+			binary.Write(piecePayloadBuffer, binary.BigEndian, uint32(i))
 			piecePayload = append(piecePayload, piecePayloadBuffer.Bytes()...)
 
 			piecePayloadBuffer = new(bytes.Buffer)
