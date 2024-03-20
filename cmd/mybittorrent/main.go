@@ -540,7 +540,7 @@ func main() {
 			if err != nil {
 				if err.Error() == "EOF" {
 					// i -= PIECE_BLOCK_MAX_SIZE
-					continue
+					break
 				}
 			}
 			err = binary.Read(conn, binary.BigEndian, &messageId)
