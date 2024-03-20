@@ -528,7 +528,11 @@ func main() {
 			piecePayload = append(piecePayload, piecePayloadBuffer.Bytes()...)
 
 			fmt.Printf("%v\n", piecePayload)
-			conn.Write(piecePayload)
+			_, err = conn.Write(piecePayload)
+			if err != nil {
+				fmt.Printf("Error sending message: %s", err.Error())
+				return
+			}
 			fmt.Printf("Begin: %d, length: %d, piece length: %d\n", i, pieceBlockLength, pieceLength)
 
 			var messageLength uint32
