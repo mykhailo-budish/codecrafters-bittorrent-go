@@ -533,7 +533,7 @@ func main() {
 				fmt.Printf("Error sending message: %s", err.Error())
 				return
 			}
-			fmt.Printf("Begin: %d, length: %d, piece length: %d\n", i, pieceBlockLength, pieceLength)
+			fmt.Printf("Begin: %d, length: %d, piece length: %d, blocks amount: %d\n", i, pieceBlockLength, pieceLength, pieceBlocksAmount)
 
 			var messageLength uint32
 			var messageId uint8
