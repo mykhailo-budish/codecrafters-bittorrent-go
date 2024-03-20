@@ -497,7 +497,6 @@ func main() {
 		}
 		fmt.Println("got unchoke")
 		pieceLength := torrentFileInfo["piece length"].(int)
-		// pieces := torrentFileInfo["pieces"].(string)
 		pieceBlocksAmount := pieceLength / PIECE_BLOCK_MAX_SIZE
 		if pieceLength%PIECE_BLOCK_MAX_SIZE > 0 {
 			pieceBlocksAmount++
@@ -540,7 +539,7 @@ func main() {
 			err = binary.Read(conn, binary.BigEndian, &messageLength)
 			if err != nil {
 				if err.Error() == "EOF" {
-					i -= PIECE_BLOCK_MAX_SIZE
+					// i -= PIECE_BLOCK_MAX_SIZE
 					continue
 				}
 			}
