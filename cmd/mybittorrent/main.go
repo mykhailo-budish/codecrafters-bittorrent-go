@@ -530,14 +530,32 @@ func main() {
 
 			fmt.Printf("%v\n", piecePayload)
 			conn.Write(piecePayload)
-			bytesRead, err = conn.Read(buf)
+
+			var messageLength uint32
+			var messageId uint8
+			err = binary.Read(conn, binary.BigEndian, &messageLength)
 			if err != nil {
 				panic(err)
 			}
-			copy(piece[pieceBlockBegin:pieceBlockBegin+pieceBlockLength], buf[13:bytesRead])
-			buf = make([]byte, 1<<15)
+			err = binary.Read(conn, binary.BigEndian, &messageId)
+			if err != nil {
+				panic(err)
+			}
+			fmt.Println(messageId)
+
+			if messageLength > 0 {
+				buf = make([]byte, messageLength-1)
+				_, err = io.ReadAtLeast(conn, buf, len(buf))
+				if err != nil {
+					panic(err)
+				}
+				blockBegin := binary.BigEndian.Uint32(buf[4:8])
+				block := buf[8:]
+				copy(piece[blockBegin:], block)
+			}
+
 		}
-		os.WriteFile(outputFilePath, piece, os.ModeAppend)
+		os.WriteFile(outputFilePath, piece, os.ModePerm)
 		fmt.Printf("Piece %d downloaded to %s.", pieceIndex, outputFilePath)
 	} else {
 		fmt.Println("Unknown command: " + command)
