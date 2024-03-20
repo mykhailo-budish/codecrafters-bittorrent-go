@@ -535,6 +535,7 @@ func main() {
 				panic(err)
 			}
 			copy(piece[pieceBlockBegin:pieceBlockBegin+pieceBlockLength], buf[13:bytesRead])
+			buf = make([]byte, 1<<15)
 		}
 		os.WriteFile(outputFilePath, piece, os.ModeAppend)
 		fmt.Printf("Piece %d downloaded to %s.", pieceIndex, outputFilePath)
