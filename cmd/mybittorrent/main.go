@@ -201,6 +201,7 @@ func (torrentFile TorrentFile) setupHandshake(address string) net.Conn {
 func (torrentFile TorrentFile) downloadPiece(pieceIndex int) (piece []byte, pieceLength int) {
 	peers := torrentFile.getPeers()
 	conn := torrentFile.setupHandshake(peers[0])
+	defer conn.Close()
 
 	bitFieldMessage := readPeerMessageFromConnection(conn)
 	if bitFieldMessage.tag != BitFieldMessage {
@@ -482,7 +483,8 @@ func main() {
 		address := os.Args[3]
 
 		torrentFile := getDecodedTorrentFile(fileName)
-		torrentFile.setupHandshake(address)
+		conn := torrentFile.setupHandshake(address)
+		defer conn.Close()
 	} else if command == "download_piece" {
 		if os.Args[2] != "-o" {
 			panic("Output file is not provided")
