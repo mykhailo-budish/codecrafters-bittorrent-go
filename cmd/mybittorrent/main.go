@@ -496,7 +496,11 @@ func main() {
 			panic("Received unexpected message, expected unchoke")
 		}
 		fmt.Println("got unchoke")
+		piecesAmount := len(torrentFileInfo["pieces"].(string)) / 20
 		pieceLength := torrentFileInfo["piece length"].(int)
+		if pieceIndex == piecesAmount-1 {
+			pieceLength = fileLength - pieceLength*(piecesAmount-1)
+		}
 		pieceBlocksAmount := pieceLength / PIECE_BLOCK_MAX_SIZE
 		if pieceLength%PIECE_BLOCK_MAX_SIZE > 0 {
 			pieceBlocksAmount++
