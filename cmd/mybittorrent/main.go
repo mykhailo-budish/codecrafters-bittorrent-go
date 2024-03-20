@@ -539,8 +539,10 @@ func main() {
 			var messageId uint8
 			err = binary.Read(conn, binary.BigEndian, &messageLength)
 			if err != nil {
-				fmt.Printf("Cannot read message length, %s", err.Error())
-				return
+				if err.Error() == "EOF" {
+					i -= PIECE_BLOCK_MAX_SIZE
+					continue
+				}
 			}
 			err = binary.Read(conn, binary.BigEndian, &messageId)
 			if err != nil {
