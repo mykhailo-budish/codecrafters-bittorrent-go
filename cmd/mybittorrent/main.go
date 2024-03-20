@@ -535,11 +535,13 @@ func main() {
 			var messageId uint8
 			err = binary.Read(conn, binary.BigEndian, &messageLength)
 			if err != nil {
-				panic(err)
+				fmt.Printf("Cannot read message length, %s", err.Error())
+				return
 			}
 			err = binary.Read(conn, binary.BigEndian, &messageId)
 			if err != nil {
-				panic(err)
+				fmt.Printf("Cannot read message ID, %s", err.Error())
+				return
 			}
 			fmt.Println(messageId)
 
@@ -547,7 +549,8 @@ func main() {
 				buf = make([]byte, messageLength-1)
 				_, err = io.ReadAtLeast(conn, buf, len(buf))
 				if err != nil {
-					panic(err)
+					fmt.Printf("Cannot read payload, %s", err.Error())
+					return
 				}
 				blockBegin := binary.BigEndian.Uint32(buf[4:8])
 				block := buf[8:]
